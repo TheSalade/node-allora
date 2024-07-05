@@ -46,7 +46,7 @@
     - name: Extract Go archive to /usr/local
       ansible.builtin.unarchive:
         src: "/tmp/go{{ GO_VERSION }}.linux-amd64.tar.gz"
-        dest: "/usr/local"
+        dest: /usr/local
         remote_src: yes
 
     - name: Clean up the downloaded Go archive
@@ -54,14 +54,14 @@
         path: "/tmp/go{{ GO_VERSION }}.linux-amd64.tar.gz"
         state: absent
 
-    - name: Add Go to PATH
+    - name: Add Go to PATH in .bash_profile
       lineinfile:
-        path: /root/.profile
+        path: /root/.bash_profile
         line: 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin'
         create: yes
 
     - name: Source profile for Go
-      shell: source /root/.profile
+      shell: source /root/.bash_profile
       args:
         executable: /bin/bash
 
