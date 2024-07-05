@@ -1,0 +1,194 @@
+---
+- name: Deploy Allora Validator Node using Ansible
+  hosts: localhost
+  become: true
+
+  vars_prompt:
+    - name: moniker
+      prompt: "Enter your node name"
+      private: false
+
+  vars:
+    NETWORK: edgenet
+    GENESIS_URL: "https://raw.githubusercontent.com/allora-network/networks/main/{{ NETWORK }}/genesis.json"
+    SEEDS_URL: "https://raw.githubusercontent.com/allora-network/networks/main/{{ NETWORK }}/seeds.txt"
+    APP_HOME: "/root/.allorad"
+    INIT_FLAG: "{{ APP_HOME }}/.initialized"
+    KEYRING_BACKEND: test
+    GENESIS_FILE: "{{ APP_HOME }}/config/genesis.json"
+    DENOM: uallo
+    SEEDS_FILE: "/tmp/seeds.txt"
+    GO_VERSION: "1.22.4"
+
+  tasks:
+    - name: Update and upgrade apt packages
+      apt:
+        update_cache: yes
+        upgrade: 'yes'
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - git
+          - jq
+          - wget
+          - build-essential
+          - gcc
+          - lz4
+        state: present
+
+    - name: Download Go archive
+      get_url:
+        url: "https://golang.org/dl/go{{ GO_VERSION }}.linux-amd64.tar.gz"
+        dest: "/tmp/go{{ GO_VERSION }}.linux-amd64.tar.gz"
+
+    - name: Extract Go archive to /usr/local
+      ansible.builtin.unarchive:
+        src: "/tmp/go{{ GO_VERSION }}.linux-amd64.tar.gz"
+        dest: /usr/local
+        remote_src: yes
+
+    - name: Clean up the downloaded Go archive
+      file:
+        path: "/tmp/go{{ GO_VERSION }}.linux-amd64.tar.gz"
+        state: absent
+
+    - name: Add Go to PATH in .bash_profile
+      lineinfile:
+        path: /root/.bash_profile
+        line: 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin'
+        create: yes
+
+    - name: Source profile for Go
+      shell: source /root/.bash_profile
+      args:
+        executable: /bin/bash
+
+    - name: Verify Go installation
+      command: /usr/local/go/bin/go version
+      register: go_version
+
+    - name: Print Go version
+      debug:
+        msg: "{{ go_version.stdout }}"
+
+    - name: Clone Allora Chain repository
+      git:
+        repo: 'https://github.com/allora-network/allora-chain.git'
+        dest: "{{ ansible_env.HOME }}/allora-chain"
+        version: "tags/v0.0.10"
+
+    - name: Run make install
+      shell: |
+        cd {{ ansible_env.HOME }}/allora-chain
+        make install
+      args:
+        executable: /bin/bash
+
+    - name: Ensure APP_HOME directory exists
+      file:
+        path: "{{ APP_HOME }}"
+        state: directory
+
+    - name: Remove existing configuration if not initialized
+      shell: rm -rf {{ APP_HOME }}/config
+      when: not (INIT_FLAG | bool)
+
+    - name: Initialize the node
+      shell: allorad --home {{ APP_HOME }} init {{ moniker }} --chain-id {{ NETWORK }} --default-denom {{ DENOM }}
+      when: not (INIT_FLAG | bool)
+
+    - name: Download genesis file
+      get_url:
+        url: "{{ GENESIS_URL }}"
+        dest: "{{ GENESIS_FILE }}"
+      when: not (INIT_FLAG | bool)
+
+    - name: Configure allorad client
+      shell: allorad --home={{ APP_HOME }} config set client chain-id {{ NETWORK }}
+      when: not (INIT_FLAG | bool)
+
+    - name: Set keyring-backend for allorad client
+      shell: allorad --home={{ APP_HOME }} config set client keyring-backend {{ KEYRING_BACKEND }}
+      when: not (INIT_FLAG | bool)
+
+    - name: Create symlink for allorad config
+      file:
+        src: "{{ APP_HOME }}"
+        dest: "{{ APP_HOME }}/.allorad"
+        state: link
+      when: not (INIT_FLAG | bool)
+
+    - name: Create init flag
+      file:
+        path: "{{ INIT_FLAG }}"
+        state: touch
+      when: not (INIT_FLAG | bool)
+
+    - name: Download seeds file
+      get_url:
+        url: "{{ SEEDS_URL }}"
+        dest: "{{ SEEDS_FILE }}"
+
+    - name: Read seeds from file
+      slurp:
+        src: "{{ SEEDS_FILE }}"
+      register: seeds_content
+
+    - name: Decode seeds content
+      set_fact:
+        seeds: "{{ seeds_content.content | b64decode }}"
+
+    - name: Configure pruning to save storage
+      ansible.builtin.shell: |
+        sed -i \
+            -e "s/^pruning *=.*/pruning = \"custom\"/" \
+            -e "s/^pruning-keep-recent *=.*/pruning-keep-recent = \"100\"/" \
+            -e "s/^pruning-keep-every *=.*/pruning-keep-every = \"0\"/" \
+            -e "s/^pruning-interval *=.*/pruning-interval = \"10\"/" \
+            "{{ APP_HOME }}/config/app.toml"
+      args:
+        executable: /bin/bash
+
+    - name: Configure indexer to null
+      ansible.builtin.shell: |
+        sed -i "s/^indexer *=.*/indexer = \"null\"/" {{ APP_HOME }}/config/config.toml
+      args:
+        executable: /bin/bash
+
+    - name: Change ports in config.toml
+      ansible.builtin.shell: |
+        sed -i "s/^laddr = \"tcp:\/\/0.0.0.0:26656\"/laddr = \"tcp:\/\/0.0.0.0:26666\"/" {{ APP_HOME }}/config/config.toml
+        sed -i "s/^laddr = \"tcp:\/\/127.0.0.1:26657\"/laddr = \"tcp:\/\/127.0.0.1:26667\"/" {{ APP_HOME }}/config/config.toml
+        sed -i "s/^pprof_laddr = \"localhost:6060\"/pprof_laddr = \"localhost:6061\"/" {{ APP_HOME }}/config/config.toml
+      args:
+        executable: /bin/bash
+
+    - name: Change port in client.toml
+      ansible.builtin.shell: |
+        sed -i "s/^node = \"tcp:\/\/localhost:26657\"/node = \"tcp:\/\/localhost:26667\"/" {{ APP_HOME }}/config/client.toml
+      args:
+        executable: /bin/bash
+
+    - name: Create systemd service file from template
+      template:
+        src: templates/allora-node.service.j2
+        dest: /etc/systemd/system/allora-node.service
+      vars:
+        app_home: "{{ APP_HOME }}"
+        moniker: "{{ moniker }}"
+        denom: "{{ DENOM }}"
+        seeds: "{{ seeds }}"
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
+    - name: Enable and start Allora Node service
+      systemd:
+        name: allora-node
+        enabled: true
+        state: started
+
+    
