@@ -170,36 +170,55 @@
       set_fact:
         peers: "{{ peers_content.content | b64decode }}"    
 
+    - name: Ensure the app.toml file exists before modifying it
+      stat:
+        path: "{{ APP_HOME }}/config/app.toml"
+      register: app_toml
+
+    - name: Ensure the config.toml file exists before modifying it
+      stat:
+        path: "{{ APP_HOME }}/config/config.toml"
+      register: config_toml
+
+    - name: Ensure the client.toml file exists before modifying it
+      stat:
+        path: "{{ APP_HOME }}/config/client.toml"
+      register: client_toml
+
     - name: Configure pruning to save storage
       ansible.builtin.shell: |
         sed -i \
-            -e "s/^pruning *=.*/pruning = \"custom\"/" \
-            -e "s/^pruning-keep-recent *=.*/pruning-keep-recent = \"100\"/" \
-            -e "s/^pruning-keep-every *=.*/pruning-keep-every = \"0\"/" \
-            -e "s/^pruning-interval *=.*/pruning-interval = \"10\"/" \
+            -e 's/^pruning *=.*/pruning = "custom"/' \
+            -e 's/^pruning-keep-recent *=.*/pruning-keep-recent = "100"/' \
+            -e 's/^pruning-keep-every *=.*/pruning-keep-every = "0"/' \
+            -e 's/^pruning-interval *=.*/pruning-interval = "10"/' \
             "{{ APP_HOME }}/config/app.toml"
       args:
         executable: /bin/bash
+      when: app_toml.stat.exists
 
     - name: Configure indexer to null
       ansible.builtin.shell: |
-        sed -i "s/^indexer *=.*/indexer = \"null\"/" {{ APP_HOME }}/config/config.toml
+        sed -i 's/^indexer *=.*/indexer = "null"/' {{ APP_HOME }}/config/config.toml
       args:
         executable: /bin/bash
+      when: config_toml.stat.exists
 
     - name: Change ports in config.toml
       ansible.builtin.shell: |
-        sed -i "s/^laddr = \"tcp:\/\/0.0.0.0:26656\"/laddr = \"tcp:\/\/0.0.0.0:26666\"/" {{ APP_HOME }}/config/config.toml
-        sed -i "s/^laddr = \"tcp:\/\/127.0.0.1:26657\"/laddr = \"tcp:\/\/127.0.0.1:26667\"/" {{ APP_HOME }}/config/config.toml
-        sed -i "s/^pprof_laddr = \"localhost:6060\"/pprof_laddr = \"localhost:6061\"/" {{ APP_HOME }}/config/config.toml
+        sed -i 's/^laddr = "tcp:\/\/0.0.0.0:26656"/laddr = "tcp:\/\/0.0.0.0:26666"/' {{ APP_HOME }}/config/config.toml
+        sed -i 's/^laddr = "tcp:\/\/127.0.0.1:26657"/laddr = "tcp:\/\/127.0.0.1:26667"/' {{ APP_HOME }}/config/config.toml
+        sed -i 's/^pprof_laddr = "localhost:6060"/pprof_laddr = "localhost:6061"/' {{ APP_HOME }}/config/config.toml
       args:
         executable: /bin/bash
+      when: config_toml.stat.exists
 
     - name: Change port in client.toml
       ansible.builtin.shell: |
-        sed -i "s/^node = \"tcp:\/\/localhost:26657\"/node = \"tcp:\/\/localhost:26667\"/" {{ APP_HOME }}/config/client.toml
+        sed -i 's/^node = "tcp:\/\/localhost:26657"/node = "tcp:\/\/localhost:26667"/' {{ APP_HOME }}/config/client.toml
       args:
         executable: /bin/bash
+      when: client_toml.stat.exists
 
     - name: Download addrbook.json
       get_url:
