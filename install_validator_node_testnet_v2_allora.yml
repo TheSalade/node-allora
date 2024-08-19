@@ -20,7 +20,7 @@
     DENOM: uallo
     SEEDS_FILE: "/tmp/seeds.txt"
     PEERS_FILE: "/tmp/peers.txt"
-    GO_VERSION: "1.22.5"
+    GO_VERSION: "1.23.0"
     ADDRBOOK_URL: "https://snapshots.polkachu.com/testnet-addrbook/allora/addrbook.json"
     ADDRBOOK_FILE: "{{ APP_HOME }}/config/addrbook.json"
 
@@ -92,7 +92,7 @@
       git:
         repo: 'https://github.com/allora-network/allora-chain.git'
         dest: "{{ ansible_env.HOME }}/allora-chain"
-        version: "tags/v0.2.14"
+        version: "tags/v0.3.0"
         force: yes
 
     - name: Run make install
