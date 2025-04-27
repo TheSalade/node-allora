@@ -1,0 +1,7 @@
+all:
+  vars:
+    go_version: "go1.23.4"
+    allochain_repo: "https://github.com/allora-network/allora-chain.git"
+    binary_version: "" # testnet: v0.11.0 | mainnet: v0.9.0
+    network_type: "" # allora-testnet-1 | allora-mainnet-1
+    addrbook_url: "https://snapshots.polkachu.com/testnet-addrbook/allora/addrbook.json" # testnet
